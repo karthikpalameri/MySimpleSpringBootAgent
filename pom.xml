@@ -62,6 +62,33 @@
             <artifactId>langchain4j-open-ai-spring-boot-starter</artifactId>
         </dependency>
 
+        <!-- HTML Processing with Jsoup -->
+        <dependency>
+            <groupId>org.jsoup</groupId>
+            <artifactId>jsoup</artifactId>
+            <version>1.17.2</version>
+        </dependency>
+
+        <!-- HTML Compression and Minification -->
+        <dependency>
+            <groupId>com.googlecode.htmlcompressor</groupId>
+            <artifactId>htmlcompressor</artifactId>
+            <version>1.5.2</version>
+        </dependency>
+
+        <!-- Apache Commons Lang for text similarity and utilities -->
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-lang3</artifactId>
+        </dependency>
+
+        <!-- Apache Commons Text for advanced string operations -->
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-text</artifactId>
+            <version>1.12.0</version>
+        </dependency>
+
     </dependencies>
     <dependencyManagement>
         <dependencies>

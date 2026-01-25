@@ -8,12 +8,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 /**
- * Listener for all ChatModel interactions
+ * Listener for all ChatModel interactions in the Locator Analyzer service
  * Provides centralized logging, monitoring, and debugging capabilities
+ * Monitors ALL locator type analysis (ID, Name, ClassName, TagName, LinkText, CSS, XPath)
  */
 @Slf4j
 @Component
-public class XPathFinderChatModelListener implements ChatModelListener {
+public class LocatorAnalyzerChatModelListener implements ChatModelListener {
 
     @Override
     public void onRequest(ChatModelRequestContext requestContext) {
@@ -21,7 +22,7 @@ public class XPathFinderChatModelListener implements ChatModelListener {
         var params = request.parameters();
 
         log.info("=".repeat(80));
-        log.info("LLM REQUEST");
+        log.info("LLM REQUEST - Locator Analysis");
         log.info("=".repeat(80));
         log.info("Model: {}", params.modelName());
         log.info("Messages: {}", request.messages().size());
@@ -52,7 +53,7 @@ public class XPathFinderChatModelListener implements ChatModelListener {
         var response = responseContext.chatResponse();
 
         log.info("=".repeat(80));
-        log.info("LLM RESPONSE");
+        log.info("LLM RESPONSE - Locator Analysis");
         log.info("=".repeat(80));
 
         if (response.aiMessage() != null) {
@@ -77,7 +78,7 @@ public class XPathFinderChatModelListener implements ChatModelListener {
     @Override
     public void onError(ChatModelErrorContext errorContext) {
         log.error("=".repeat(80));
-        log.error("LLM ERROR");
+        log.error("LLM ERROR - Locator Analysis");
         log.error("=".repeat(80));
         log.error("Request: {}", errorContext.chatRequest());
         log.error("Error: {}", errorContext.error().getMessage(), errorContext.error());
