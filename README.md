@@ -1,48 +1,51 @@
-# AI-Powered Selenium Locator Analyzer
+# AI-Powered Selenium Locator Analyzer - Complete Guide
 
-A Spring Boot service that uses local LLMs to analyze failed Selenium locators and suggest alternatives across **ALL** Selenium locator types.
+A Spring Boot service that uses local LLMs to analyze failed Selenium locators and suggest alternatives across **ALL** Selenium locator types (ID, Name, CSS, XPath, LinkText, and more).
 
-## ✨ Key Features
+---
 
-- 🎯 **All Selenium Locators** - ID, Name, ClassName, TagName, LinkText, PartialLinkText, CSS, XPath
-- 🤖 **AI-Powered** - Local LLM analysis with confidence scores and explanations
-- ⚡ **Smart Preprocessing** - 90%+ HTML size reduction for large pages
-- 🏆 **Priority Recommendations** - ID > Name > LinkText > CSS > XPath
-- 🛠️ **SOLID Architecture** - Clean, testable, maintainable design
-- 📊 **Built-in Observability** - Full LLM interaction logging
+## 📑 Table of Contents
 
-## 🚀 Quick Start
+1. [Quick Start](#quick-start) - Get running in 5 minutes
+2. [What This Tool Does](#what-this-tool-does) - Core concepts
+3. [How It Works](#how-it-works) - Visual guides and architecture
+4. [API Reference](#api-reference) - Endpoints and examples
+5. [Configuration](#configuration) - Settings and tuning
+6. [Locator Strategies](#locator-strategies) - Selenium types and AI strategy
+7. [Development Guide](#development-guide) - Architecture and SOLID principles
+8. [IDE Setup](#ide-setup) - Java LSP for Claude Code
+9. [Troubleshooting](#troubleshooting) - Common issues and solutions
+10. [Quick Reference](#quick-reference) - Templates and commands
 
-### Prerequisites
-- Java 21+
-- Maven 3.6+
-- Ollama with llama3.2
+---
 
-### Setup
+## Quick Start
+
+### Prerequisites & Installation
 
 ```bash
-# Install Ollama
+# 1. Install Ollama
 curl -fsSL https://ollama.ai/install.sh | sh
 ollama pull llama3.2
 
-# Clone and run
+# 2. Clone and run
 git clone <repo-url>
 cd MySimpleSpringBootAgent
 mvn spring-boot:run
+
+# Service runs at http://localhost:8080
 ```
 
-Service runs at `http://localhost:8080`
-
-### Test It
+### First Test
 
 ```bash
 # Health check
 curl http://localhost:8080/api/locators/health
 
-# Test endpoint
+# Test with sample data
 curl http://localhost:8080/api/locators/test
 
-# Analyze a locator
+# Analyze a failed locator
 curl -X POST http://localhost:8080/api/locators/analyze \
   -H "Content-Type: application/json" \
   -d '{
@@ -52,319 +55,44 @@ curl -X POST http://localhost:8080/api/locators/analyze \
   }'
 ```
 
-**Response:**
+**Expected Response:**
 ```json
 {
-  "recommendedLocatorType": "ID",
-  "recommendedLocator": "search",
-  "byId": "search",
-  "byName": "q",
-  "primaryCssSelector": "#search",
-  "primaryXPath": "//*[@id='search']",
-  "confidence": 95,
   "elementFound": true,
+  "recommendedLocator": "search",
+  "recommendedLocatorType": "ID",
+  "byId": "search",
+  "primaryCssSelector": "#search",
+  "confidence": 95,
   "explanation": "Use By.id for best reliability"
 }
 ```
 
-## 📖 How It Works - Visual Flow
+---
 
-### Main Process Flow
+## What This Tool Does
 
-```mermaid
-sequenceDiagram
-    participant User as User/Client
-    participant API as Spring Boot API
-    participant HTML as HtmlPreprocessor
-    participant Tools as DomQueryTools
-    participant AI as Claude AI
-    participant Response as ResponseMapper
+### The Problem
+Selenium test locators break when HTML elements change. Finding alternatives is time-consuming and error-prone.
 
-    User->>API: POST /analyze<br/>(locator, htmlContent,<br/>description, url)
-    API->>API: ✓ Validate request
-    API->>HTML: Preprocess HTML<br/>(clean, optimize)
-    HTML-->>API: Jsoup Document<br/>(cleaned HTML)
-    API->>Tools: Store in ThreadLocal<br/>(accessible to AI)
+### The Solution
+Send the failed locator and page HTML to this service. It uses AI to intelligently suggest alternatives across ALL Selenium locator types with confidence scores.
 
-    API->>AI: Call analyzeLocator()<br/>ONLY sends:<br/>- locator string<br/>- description<br/>- pageUrl<br/>(NO HTML!)
+### Key Features
+- 🎯 **All Selenium Locators** - ID, Name, ClassName, TagName, LinkText, PartialLinkText, CSS, XPath
+- 🤖 **AI-Powered** - Local LLM analysis with confidence scores
+- ⚡ **Smart Preprocessing** - 90%+ HTML size reduction for large pages
+- 🏆 **Priority Recommendations** - ID > Name > LinkText > CSS > XPath
+- 🛠️ **SOLID Architecture** - Clean, testable, maintainable design
+- 📊 **Full Observability** - Complete LLM interaction logging
 
-    Note over AI: AI analyzes without full HTML
-    AI->>Tools: findByXPath(xpath)<br/>Query the stored HTML
-    Tools-->>AI: Results
-
-    AI->>Tools: getAllInteractiveElements()<br/>See what's available
-    Tools-->>AI: List of buttons/inputs
-
-    AI->>Tools: findByCss(selector)<br/>Test alternatives
-    Tools-->>AI: Match found
-
-    AI-->>API: LocatorAnalysisResult<br/>(recommendations)
-
-    API->>Tools: Clear ThreadLocal<br/>(cleanup)
-    API->>Response: Convert to response
-    Response-->>API: LocatorAnalysisResponse
-    API-->>User: 200 OK + JSON<br/>with alternatives
-```
-
-### Why HTML is NOT Sent to AI
-
-```mermaid
-graph LR
-    A["You send:<br/>- Locator string<br/>- HTML content<br/>- Description<br/>- Page URL"] -->|HTML Preprocessing| B["Cleaned HTML stored<br/>in ThreadLocal"]
-
-    B -->|AI calls tools| C["Tool queries<br/>the stored HTML"]
-
-    C -->|AI gets results| D["Best locator<br/>recommendations"]
-
-    E["AI Never Sees<br/>Raw HTML!"] -.-> D
-
-    style A fill:#e3f2fd
-    style B fill:#f3e5f5
-    style C fill:#e8f5e9
-    style D fill:#fff3e0
-    style E fill:#ffebee
-```
-
-**Key Insight**: You upload HTML once → AI intelligently queries what it needs via tools! 🎯
-
-### Request Processing Steps
-
-```mermaid
-graph TD
-    A["1️⃣ Request Arrives<br/>locator, html, description, url"]
-    --> B["2️⃣ Validate<br/>Check all required fields"]
-    --> C{"Valid?"}
-
-    C -->|❌ No| D["Return 400<br/>Bad Request"]
-    C -->|✅ Yes| E["3️⃣ Preprocess HTML<br/>Remove scripts/styles<br/>Clean up text"]
-
-    E --> F["4️⃣ Store in ThreadLocal<br/>Make available to tools"]
-    --> G["5️⃣ Call AI<br/>with 3 parameters only"]
-
-    G --> H["🤖 AI Analysis<br/>Uses tools to query HTML"]
-
-    H --> I["6️⃣ Format Response<br/>Convert to JSON"]
-    --> J["7️⃣ Cleanup<br/>Clear ThreadLocal"]
-    --> K["8️⃣ Return 200 OK<br/>with recommendations"]
-
-    D --> L["Clean up resources"]
-    K --> M["✅ Complete"]
-    L --> M
-
-    style A fill:#bbdefb
-    style E fill:#c8e6c9
-    style G fill:#ffe0b2
-    style H fill:#f8bbd0
-    style K fill:#b2dfdb
-    style M fill:#c8e6c9
-```
-
-## 📖 Documentation
-
-**[→ Full Documentation](DOCUMENTATION.md)** - Complete guide with examples, configuration, and troubleshooting
-
-### Quick Links
-- [API Reference](DOCUMENTATION.md#api-reference) - Endpoints and response formats
-- [Usage Examples](DOCUMENTATION.md#usage-examples) - Curl and Java/Selenium examples
-- [Architecture](DOCUMENTATION.md#architecture) - Design and structure
-- [Configuration](DOCUMENTATION.md#configuration) - Settings and options
-- [Troubleshooting](DOCUMENTATION.md#troubleshooting) - Common issues and solutions
-
-## 🏗️ Component Architecture
-
-```mermaid
-graph TB
-    subgraph "🌐 Controller Layer"
-        API["LocatorController<br/>(HTTP endpoints)"]
-    end
-
-    subgraph "🛠️ Validation & Formatting"
-        VAL["LocatorRequestValidator<br/>(Input validation)"]
-        MAP["LocatorResponseMapper<br/>(Format output)"]
-    end
-
-    subgraph "📝 HTML Processing"
-        PRE["HtmlPreprocessor<br/>(Clean & optimize)"]
-        MIN["HtmlMinificationService<br/>(Reduce size)"]
-        UTIL["HtmlUtilityService<br/>(Utilities)"]
-    end
-
-    subgraph "🔧 DOM Tools"
-        DOM["DomQueryTools<br/>(Query DOM with tools)"]
-    end
-
-    subgraph "🤖 AI Layer"
-        AI["LocatorAnalyzerAI<br/>(Claude via LangChain4j)"]
-    end
-
-    API -->|Validates| VAL
-    API -->|Preprocesses| PRE
-    PRE --> MIN
-    PRE --> UTIL
-    API -->|Stores| DOM
-    API -->|Calls| AI
-    AI -->|Uses tools| DOM
-    API -->|Formats| MAP
-
-    style API fill:#e3f2fd,color:#000
-    style AI fill:#fff3e0,color:#000
-    style DOM fill:#e8f5e9,color:#000
-    style PRE fill:#f3e5f5,color:#000
-    style MAP fill:#fce4ec,color:#000
-```
-
-### AI Tool Capabilities
-
-The AI has access to these tools to query the HTML:
-
-```mermaid
-graph LR
-    AI["🤖 AI<br/>Claude"]
-
-    T1["🔍 findByXPath<br/>Test XPath<br/>Example: //*[@id='x']"]
-    T2["🎨 findByCss<br/>Test CSS selector<br/>Example: button.active"]
-    T3["🆔 findById<br/>Find by ID<br/>Example: search-btn"]
-    T4["🏷️ findByAttribute<br/>Find by attribute<br/>Example: data-testid"]
-    T5["📝 findByText<br/>Find by text<br/>Example: 'Click here'"]
-    T6["📋 getAllInteractiveElements<br/>List buttons/inputs/links"]
-
-    AI -->|calls| T1
-    AI -->|calls| T2
-    AI -->|calls| T3
-    AI -->|calls| T4
-    AI -->|calls| T5
-    AI -->|calls| T6
-
-    style AI fill:#fff3e0
-    style T1 fill:#e8f5e9
-    style T2 fill:#e8f5e9
-    style T3 fill:#e8f5e9
-    style T4 fill:#e8f5e9
-    style T5 fill:#e8f5e9
-    style T6 fill:#e8f5e9
-```
-
-## 🎯 Selenium Locator Types
-
-| Type | Reliability | When to Use | AI Preference |
-|------|-------------|-------------|---------------|
-| **By.id** | ⭐⭐⭐⭐⭐ | Element has stable ID (preferred) | 🥇 1st choice |
-| **By.name** | ⭐⭐⭐⭐ | Form elements | 🥈 2nd choice |
-| **By.linkText** | ⭐⭐⭐⭐ | Links with stable text | 🥉 3rd choice |
-| **By.className** | ⭐⭐⭐ | Unique stable classes | 4th choice |
-| **By.cssSelector** | ⭐⭐⭐⭐ | Flexible queries | 5th choice |
-| **By.xpath** | ⭐⭐ | Last resort (brittle) | Last resort |
-
-### AI Analysis Strategy
-
-```mermaid
-sequenceDiagram
-    participant AI as Claude AI
-    participant Tools
-
-    Note over AI: Step 1: Understand the problem
-    AI->>Tools: Test failed locator
-    Tools-->>AI: Result: No matches (broken)
-
-    Note over AI: Step 2: See available elements
-    AI->>Tools: getAllInteractiveElements()
-    Tools-->>AI: 50+ buttons/inputs/links
-
-    Note over AI: Step 3: Find target element
-    AI->>Tools: findByText('element description')
-    Tools-->>AI: Found! Here are its attributes
-
-    Note over AI: Step 4: Test alternatives
-    AI->>Tools: findById('target-id')
-    Tools-->>AI: ✓ Success!
-
-    AI->>Tools: findByCss('button.target')
-    Tools-->>AI: ✓ Success!
-
-    AI->>Tools: findByXPath('//button[@id=...]')
-    Tools-->>AI: ✓ Success!
-
-    Note over AI: Choose best: By.id<br/>(most stable)
-    AI-->>AI: Return recommendations
-```
-
-## 📊 Data Flow & Request/Response
-
-### What Gets Sent in Request?
-
-```mermaid
-graph LR
-    A["Request JSON<br/>{<br/>  locator: string<br/>  htmlContent: string<br/>  elementDescription: string<br/>  pageUrl: string<br/>}"]
-
-    A -->|Required| B["✅ locator<br/>'//*[@id=x]'"]
-    A -->|Required| C["✅ htmlContent<br/>'<html>...'"]
-    A -->|Optional| D["➕ elementDescription<br/>'Submit button'"]
-    A -->|Optional| E["➕ pageUrl<br/>'https://...'"]
-
-    style A fill:#bbdefb
-    style B fill:#c8e6c9
-    style C fill:#c8e6c9
-    style D fill:#ffe0b2
-    style E fill:#ffe0b2
-```
-
-### What You Get Back in Response?
-
-```mermaid
-graph LR
-    A["Response JSON<br/>{<br/>  elementFound: boolean<br/>  recommendedLocator: string<br/>  recommendedLocatorType: string<br/>  alternatives: object<br/>  confidence: number<br/>  explanation: string<br/>}"]
-
-    A -->|"✅ Found"| B["elementFound: true"]
-    A -->|"🎯 Best"| C["recommendedLocator<br/>'search-id'"]
-    A -->|"🏆 Type"| D["recommendedLocatorType<br/>'ID'"]
-    A -->|"🔄 Alternatives"| E["alternatives: {<br/>  CSS_SELECTOR:<br/>  XPATH: <br/>}"]
-    A -->|"📊 Certainty"| F["confidence<br/>0.95 = 95%"]
-    A -->|"💭 Why"| G["explanation<br/>'Use ID for...']"]
-
-    style A fill:#fff3e0
-    style B fill:#c8e6c9
-    style C fill:#c8e6c9
-    style D fill:#c8e6c9
-    style E fill:#ffe0b2
-    style F fill:#ffe0b2
-    style G fill:#ffe0b2
-```
-
-### Example Request/Response
-
-**Request:**
-```json
-{
-  "locator": "//*[@id='old-search']",
-  "htmlContent": "<html>...<input id='new-search' name='q'/></html>",
-  "elementDescription": "Search input field",
-  "pageUrl": "https://example.com/search"
-}
-```
-
-**Response:**
-```json
-{
-  "elementFound": true,
-  "recommendedLocator": "new-search",
-  "recommendedLocatorType": "ID",
-  "alternatives": {
-    "NAME": "q",
-    "CSS_SELECTOR": "input#new-search",
-    "XPATH": "//*[@id='new-search']"
-  },
-  "confidence": 0.98,
-  "explanation": "Found input element with stable ID 'new-search', which is the most reliable locator strategy."
-}
-```
-
-## 💡 Example Usage in Tests
+### Basic Usage (Java/Selenium)
 
 ```java
 try {
     driver.findElement(By.xpath("//*[@id='oldId']"));
 } catch (NoSuchElementException e) {
-    // Get AI suggestions
+    // Call API
     LocatorAnalysisResponse response = analyzeLocator(
         driver.getPageSource(),
         "//*[@id='oldId']",
@@ -381,155 +109,690 @@ try {
 }
 ```
 
-## 🔄 Complete Request Lifecycle
+---
 
-```mermaid
-graph TD
-    A["📥 Client sends request"]
-    --> B["🔐 Spring receives HTTP POST"]
-    --> C["LocatorController.analyzeLocator()"]
-    --> D["📋 LocatorRequestValidator<br/>validate()"]
+## How It Works
 
-    D --> E{"Valid?"}
-    E -->|❌ Invalid| F["Return 400<br/>Bad Request"]
-    E -->|✅ Valid| G["🔧 HtmlPreprocessor<br/>preprocessHtml()"]
+### Main Request Flow
 
-    G --> H["📦 Jsoup Document<br/>Cleaned & Optimized"]
-    --> I["🔐 DomQueryTools<br/>setDocument"]
-    --> J["ThreadLocal Storage<br/>(tools can access)"]
-
-    J --> K["🤖 LocatorAnalyzerAI<br/>analyzeLocator()"]
-
-    K --> L["AI Uses Tools<br/>findByXPath()<br/>findByCss()<br/>getAllInteractiveElements()"]
-    --> M["🧠 AI Analysis<br/>Compares alternatives<br/>Scores reliability"]
-
-    M --> N["📊 LocatorAnalysisResult<br/>recommendations"]
-
-    N --> O["🔧 LocatorResponseMapper<br/>toResponse()"]
-    --> P["📤 LocatorAnalysisResponse<br/>JSON format"]
-
-    Q["🧹 DomQueryTools<br/>clearDocument()"]
-    R["Return 200 OK<br/>+ Response JSON"]
-
-    F --> S["🧹 Cleanup"]
-    P --> Q
-    Q --> R
-    S --> T["✅ Complete"]
-    R --> T
-
-    style A fill:#c8e6c9
-    style K fill:#fff3e0
-    style M fill:#fff3e0
-    style R fill:#c8e6c9
-    style T fill:#a5d6a7
+```
+┌────────────────────────────────────────────────────────────────┐
+│  Client sends POST /api/locators/analyze                       │
+│  { locator, htmlContent, elementDescription, pageUrl }         │
+└─────────────────┬──────────────────────────────────────────────┘
+                  │
+                  ▼
+┌────────────────────────────────────────────────────────────────┐
+│  LocatorController validates & preprocesses HTML               │
+│  • HtmlPreprocessor removes scripts/styles/comments            │
+│  • DomQueryTools stores cleaned Jsoup Document in ThreadLocal  │
+└─────────────────┬──────────────────────────────────────────────┘
+                  │
+                  ▼
+┌────────────────────────────────────────────────────────────────┐
+│  LocatorAnalyzerAI calls Claude with 3 small params            │
+│  ✅ Sending: locator + description (not raw HTML!)             │
+│  Claude uses 6 tools to query stored HTML intelligently        │
+└─────────────────┬──────────────────────────────────────────────┘
+         ┌────────┴──────────┐
+         ▼                   ▼
+     Tools Used:         Results:
+     findByXPath()       ✓ Found element
+     findByCss()         ✓ Works reliably
+     findById()          ✓ Most stable
+         │                   │
+         └────────┬──────────┘
+                  │
+                  ▼
+┌────────────────────────────────────────────────────────────────┐
+│  AI Scores & Returns Recommendations                           │
+│  LocatorResponseMapper formats response                        │
+│  DomQueryTools clears ThreadLocal (cleanup)                    │
+└─────────────────┬──────────────────────────────────────────────┘
+                  │
+                  ▼
+┌────────────────────────────────────────────────────────────────┐
+│  Return 200 OK + JSON with recommendations to client           │
+└────────────────────────────────────────────────────────────────┘
 ```
 
-### Error Handling Flow
+### Key Insight: HTML Stays on Server
 
-```mermaid
-graph TD
-    A["Request arrives"] --> B{"Valid input?"}
-
-    B -->|❌ No| C["400 Bad Request<br/>Error: validation failed"]
-    B -->|✅ Yes| D["Process HTML"]
-
-    D --> E{"HTML parseable?"}
-    E -->|❌ No| F["400 Bad Request<br/>Error: invalid HTML"]
-    E -->|✅ Yes| G["Call AI"]
-
-    G --> H{"AI Success?"}
-    H -->|❌ Error| I["500 Internal Error<br/>Error: AI analysis failed"]
-    H -->|✅ Success| J["200 OK<br/>Recommendations"]
-
-    C --> K["🧹 Cleanup<br/>Clear resources"]
-    F --> K
-    I --> K
-    J --> K
-    K --> L["✅ End"]
-
-    style J fill:#c8e6c9,color:#000
-    style C fill:#ffcdd2,color:#000
-    style F fill:#ffcdd2,color:#000
-    style I fill:#ffcdd2,color:#000
-    style L fill:#a5d6a7,color:#000
+**Traditional (Wasteful):**
+```
+Client → {50KB HTML + params} → AI processes all
+Cost: $$$$ (tokens, slow, insecure)
 ```
 
-## 🏗️ Architecture Highlights
+**Smart (Efficient):**
+```
+Client → {50KB HTML + params}
+            ↓ (stays on server)
+          {3 params} → AI uses tools
+Cost: $ (minimal tokens, fast, secure)
+```
 
-### SOLID Design Principles
-- **Single Responsibility** - Each service has one clear purpose
-- **Interface Segregation** - Small, focused interfaces
-- **Dependency Inversion** - Depend on abstractions, not implementations
+### Component Architecture
 
-### Key Components
-- **Controller Layer** - HTTP concerns only
-- **Service Layer** - Business logic with interfaces
-- **AI Service** - LangChain4j integration
-- **HTML Preprocessing** - 5-stage pipeline for size reduction
+```
+LocatorController (HTTP endpoints)
+    ↓
+├─ LocatorRequestValidator (validate input)
+├─ HtmlPreprocessor (clean HTML, remove noise)
+├─ DomQueryTools (ThreadLocal storage + 6 tools)
+├─ LocatorAnalyzerAI (Claude AI interface)
+└─ LocatorResponseMapper (format response)
+```
 
-### Recent Refactoring (2026-01-25)
-Refactored to fix SOLID violations:
-- Extracted validation, mapping, and formatting from controller
-- Split HTML preprocessing utilities into focused services
-- Improved testability and maintainability
+### AI Tool Capabilities
 
-See [solid-refactoring-summary.md](.serena/memories/solid-refactoring-summary.md) for details.
+The AI has 6 tools for querying stored HTML:
 
-## ⚙️ Configuration
+| Tool | Purpose | Example |
+|------|---------|---------|
+| `findByXPath()` | Test XPath expressions | `//*[@id='login']` |
+| `findByCss()` | Test CSS selectors | `button.submit-btn` |
+| `findById()` | Find by ID attribute | `search-input` |
+| `findByAttribute()` | Find by any HTML attribute | `data-testid='submit'` |
+| `findByText()` | Find by visible text | `"Click here"` |
+| `getAllInteractiveElements()` | List all clickable/input elements | Returns JSON array |
 
-Edit `src/main/resources/application.properties`:
+### AI Analysis Strategy
 
+```
+Step 1: Understand the Problem
+  • Test the failed locator
+  • Confirm it doesn't match
+
+Step 2: Survey Available Elements
+  • getAllInteractiveElements()
+  • See all buttons, inputs, links
+
+Step 3: Find Target Element
+  • Use element description
+  • Test multiple strategies
+
+Step 4: Test Alternatives
+  • By.id (most reliable)
+  • By.name (good for forms)
+  • By.css (flexible)
+  • By.xpath (last resort)
+
+Step 5: Score & Rank
+  • By.id = 100 (most reliable)
+  • By.name = 90
+  • By.css = 85
+  • By.xpath = 60
+
+Step 6: Return Recommendations
+  • Best choice
+  • Confidence score
+  • Alternatives
+```
+
+---
+
+## API Reference
+
+### Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/locators/health` | Health check |
+| GET | `/api/locators/test` | Test with sample HTML |
+| POST | `/api/locators/analyze` | Analyze failed locator |
+
+### Request Format
+
+**POST /api/locators/analyze**
+
+```json
+{
+  "locator": "//*[@id='search']",              // REQUIRED
+  "htmlContent": "<html>...</html>",           // REQUIRED
+  "elementDescription": "Search button",       // OPTIONAL
+  "pageUrl": "https://example.com"             // OPTIONAL
+}
+```
+
+### Response Format
+
+**Success (200 OK):**
+```json
+{
+  "elementFound": true,
+  "recommendedLocator": "search-id",
+  "recommendedLocatorType": "ID",
+  "byId": "search-id",
+  "byName": "q",
+  "byClassName": "search-input",
+  "byTagName": "input",
+  "byLinkText": null,
+  "byPartialLinkText": null,
+  "primaryCssSelector": "#search-id",
+  "alternativeCssSelectors": ["input.search"],
+  "primaryXPath": "//*[@id='search-id']",
+  "alternativeXPaths": ["//input[@name='q']"],
+  "confidence": 95,
+  "explanation": "Use By.id for best reliability"
+}
+```
+
+**Error (400 Bad Request):**
+```json
+{
+  "statusCode": 400,
+  "error": "locator cannot be empty"
+}
+```
+
+### Examples
+
+**Example 1: Search Box with ID**
+
+```bash
+curl -X POST http://localhost:8080/api/locators/analyze \
+  -H "Content-Type: application/json" \
+  -d '{
+    "locator": "//*[@id=\"oldId\"]",
+    "htmlContent": "<html><body><input id=\"search\" name=\"q\" class=\"search-box\"/></body></html>",
+    "elementDescription": "Search input",
+    "pageUrl": "https://example.com"
+  }'
+```
+
+Response: By.id("search") recommended with 98% confidence.
+
+**Example 2: Form Field Without ID**
+
+```bash
+curl -X POST http://localhost:8080/api/locators/analyze \
+  -H "Content-Type: application/json" \
+  -d '{
+    "locator": "//*[@class=\"no-longer-exists\"]",
+    "htmlContent": "<html><body><input name=\"username\" placeholder=\"Username\"/></body></html>",
+    "elementDescription": "Username field"
+  }'
+```
+
+Response: By.name("username") recommended with 95% confidence.
+
+---
+
+## Configuration
+
+### Application Properties
+
+**LLM Configuration (Ollama)**
 ```properties
-# LLM (Ollama)
+# Base URL for Ollama
 langchain4j.ollama.chat-model.base-url=http://localhost:11434
+
+# Model name (recommended: llama3.2)
 langchain4j.ollama.chat-model.model-name=llama3.2
+
+# Temperature (0.1-0.3 for structured output)
 langchain4j.ollama.chat-model.temperature=0.3
 
-# HTML Preprocessing
+# Timeout (increase for large HTML)
+langchain4j.ollama.chat-model.timeout=300s
+```
+
+**LLM Configuration (LMStudio)**
+```properties
+langchain4j.open-ai.chat-model.base-url=http://localhost:1234/v1
+langchain4j.open-ai.chat-model.api-key=not-needed
+langchain4j.open-ai.chat-model.model-name=local-model
+langchain4j.open-ai.chat-model.temperature=0.3
+```
+
+**HTML Preprocessing**
+```properties
+# Target size for optimized HTML (bytes)
 html.processing.max-output-size=51200
+
+# Maximum elements to analyze
 html.processing.max-candidates=5
 ```
 
-For LMStudio or other providers, see [Configuration](DOCUMENTATION.md#configuration).
+### LLM Setup
 
-## 🐛 Troubleshooting
-
-**Ollama not running?**
+**Ollama (Recommended)**
 ```bash
+# Install
+curl -fsSL https://ollama.ai/install.sh | sh
+
+# Start service
 ollama serve
+
+# Pull model
 ollama pull llama3.2
 ```
 
-**JSON parsing errors?**
+**LMStudio**
+1. Download from https://lmstudio.ai/
+2. Load a model
+3. Start local server
+4. Update configuration to point to `http://localhost:1234/v1`
+
+### HTML Processing Tuning
+
+```properties
+# For large pages (500KB+)
+html.processing.max-output-size=102400
+
+# For complex analysis
+html.processing.max-candidates=10
+
+# For slow LLMs
+langchain4j.ollama.chat-model.timeout=600s
+
+# For deterministic output
+langchain4j.ollama.chat-model.temperature=0.1
+```
+
+---
+
+## Locator Strategies
+
+### Selenium Locator Types
+
+AI recommends in this priority order:
+
+| Priority | Type | Reliability | When to Use |
+|----------|------|-------------|-------------|
+| 🥇 1 | **By.id** | ⭐⭐⭐⭐⭐ | Element has stable ID |
+| 🥈 2 | **By.name** | ⭐⭐⭐⭐ | Form elements with name |
+| 🥉 3 | **By.linkText** | ⭐⭐⭐⭐ | Links with stable text |
+| 4️⃣ 4 | **By.className** | ⭐⭐⭐ | Unique stable classes |
+| 5️⃣ 5 | **By.cssSelector** | ⭐⭐⭐⭐ | Complex selectors |
+| 6️⃣ 6 | **By.partialLinkText** | ⭐⭐⭐ | Links (partial text) |
+| 7️⃣ 7 | **By.tagName** | ⭐⭐ | Generic element groups |
+| 8️⃣ 8 | **By.xpath** | ⭐⭐ | Last resort (brittle) |
+
+### Best Practices
+
+1. **Always prefer By.id** when stable ID exists (fastest, most reliable)
+2. **Use By.name** for form elements (semantic, usually stable)
+3. **Use By.linkText** for links with stable text
+4. **Add data-testid** attributes for test stability
+5. **Avoid By.xpath** unless absolutely necessary (slow, brittle)
+
+---
+
+## Development Guide
+
+### Architecture Overview
+
+**File Structure:**
+```
+src/main/java/com/simple/MySimpleSpringBootAgent/
+├── aiservice/
+│   └── LocatorAnalyzerAI.java       # AI interface
+├── controller/
+│   └── LocatorController.java       # REST endpoints
+├── service/
+│   ├── LocatorRequestValidator.java # Validation
+│   ├── LocatorResponseMapper.java   # DTO mapping
+│   ├── HtmlPreprocessor.java        # Pipeline
+│   ├── HtmlMinificationService.java # Size reduction
+│   ├── HtmlUtilityService.java      # Utilities
+│   └── DomQueryTools.java           # DOM tools
+├── dto/
+│   ├── LocatorAnalysisRequest.java
+│   ├── LocatorAnalysisResponse.java
+│   ├── LocatorAnalysisResult.java
+│   └── LocatorType.java
+└── config/
+    └── HtmlProcessingConfig.java
+```
+
+### SOLID Principles Applied
+
+**Single Responsibility:**
+- `LocatorController` - HTTP concerns only
+- `HtmlPreprocessor` - HTML processing only
+- `LocatorAnalyzerAI` - AI analysis only
+- `LocatorResponseMapper` - Response formatting only
+
+**Open/Closed:** All components use interfaces, easy to extend
+
+**Liskov Substitution:** AI services are interchangeable
+
+**Interface Segregation:** Small, focused interfaces
+
+**Dependency Inversion:** Depend on abstractions via Spring injection
+
+### LangChain4j Integration
+
+**What We Use:**
+- ✅ Tool calling (@Tool annotations)
+- ✅ @SystemMessage, @UserMessage decorators
+- ✅ Chat model integration
+- ✅ Agent framework
+
+**What We Don't Use:**
+- ❌ Document Transformer (not needed for single page)
+- ❌ Document Splitter (no document corpus)
+- ❌ RAG/retrieval (not needed)
+- ❌ Embedding stores (not needed)
+
+**Why?** We process one HTML page per request. Direct Jsoup approach is simpler and more efficient. Tool calling is perfect for our use case.
+
+### HTML Processing Pipeline
+
+**5-Stage Process:**
+
+1. **Input Validation** - Check not empty, valid HTML
+2. **Preprocessing** - Parse with Jsoup, remove scripts/styles/comments
+3. **ThreadLocal Storage** - Store cleaned document, make available to tools
+4. **AI Analysis** - Send locator + description, AI queries document
+5. **Cleanup** - Remove from ThreadLocal, free memory
+
+**Size Reduction:**
+- Original HTML: 500KB → After preprocessing: 50KB (90% reduction)
+- Sent to AI: 3 params only
+
+### Dependencies
+
+**Core:**
+- Java 21, Spring Boot 3.4.2
+- langchain4j 1.10.0 (AI with tool calling)
+- Jsoup 1.17.2 (HTML parsing)
+- HtmlCompressor 1.5.2 (size reduction)
+
+**What Each Does:**
+- `langchain4j` - Coordinates AI and tool execution
+- `Jsoup` - Parses HTML and queries DOM safely
+- `HtmlCompressor` - Reduces HTML size for large pages
+- `Spring Boot` - Web framework and injection
+- `Lombok` - Auto-generates getters/setters
+
+---
+
+## IDE Setup
+
+### Java LSP for Claude Code
+
+**Status**: ✅ WORKING & ENABLED (verified January 25, 2026)
+
+**Components Installed:**
+- ✅ Java 21.0.9
+- ✅ JDTLS v1.55.0
+- ✅ jdtls-lsp plugin v1.0.0
+- ✅ Claude Code v2.1.19
+
+### Installation Steps
+
+**1. Install Java 21+**
+```bash
+java --version  # Should be 21+
+```
+
+**2. Install JDTLS**
+```bash
+brew install jdtls
+which jdtls  # Verify: /opt/homebrew/bin/jdtls
+```
+
+**3. Install jdtls-lsp Plugin in Claude Code**
+```bash
+# In Claude Code CLI:
+/plugin
+
+# Navigate to "Discover" tab
+# Search for: jdtls-lsp
+# Source: claude-plugins-official
+# Click "Install"
+# Enable at project scope
+```
+
+**4. Restart Claude Code**
+```bash
+exit
+cc  # Start new session
+```
+
+### Verification
+
+```bash
+# Check installation
+java --version
+which jdtls
+ps aux | grep jdtls | grep -v grep
+
+# Verify plugin
+/plugin  # Should show jdtls-lsp as Enabled
+```
+
+### How LSP Works
+
+LSP runs **silently in the background** - no explicit tool invocation needed.
+
+**Automatic Capabilities:**
+- Real-time diagnostics (errors/warnings)
+- Go to definition
+- Find references
+- Hover information
+- Type checking
+
+**Performance:** ~900x faster than text search (50ms vs 45s)
+
+### Troubleshooting LSP
+
+**Not working?**
+1. Restart Claude Code: `exit` then `cc`
+2. Verify JDTLS process: `ps aux | grep jdtls`
+3. Clear cache: `rm -rf ~/Library/Caches/jdtls/`
+4. Reinstall plugin from `/plugin`
+
+**Executable not found?**
+```bash
+brew install jdtls
+which jdtls
+```
+
+---
+
+## Troubleshooting
+
+### Common Issues
+
+**1. Ollama Connection Error**
+
+Error: `Connection refused: localhost:11434`
+
+Solution:
+```bash
+curl http://localhost:11434/api/tags  # Check if running
+ollama serve                            # Start service
+ollama pull llama3.2                    # Pull model
+```
+
+**2. JSON Parsing Errors**
+
+Symptom: Garbled or unparseable AI responses
+
+Solution:
 ```properties
 langchain4j.ollama.chat-model.temperature=0.1
 ```
 
-See [Troubleshooting Guide](DOCUMENTATION.md#troubleshooting) for more.
+**3. Timeout for Large HTML**
 
-## 📦 Tech Stack
+Error: `Request timeout after 300s`
 
-- Java 21, Spring Boot 3.4.2
-- langchain4j 1.10.0
-- Jsoup 1.17.2
-- HtmlCompressor 1.5.2
-- Lombok, Apache Commons
+Solution:
+```properties
+langchain4j.ollama.chat-model.timeout=600s
+html.processing.max-output-size=25600
+```
 
-## 📚 Resources
+**4. Empty/Null Responses**
 
-- [Full Documentation](DOCUMENTATION.md)
-- [langchain4j Docs](https://docs.langchain4j.dev/)
-- [Selenium Docs](https://www.selenium.dev/documentation/)
-- [Ollama](https://ollama.ai/)
+Symptom: AI returns null or empty
 
-## 🤝 Contributing
+Solution:
+- Check model supports structured output
+- Try different model: `qwen2.5-coder`, `mistral`
+- Increase temperature: `0.5`
 
-Issues and PRs welcome!
+**5. Compilation Errors**
 
-## 📄 License
+```bash
+mvn clean compile
+java -version  # Should be 21+
+```
 
-MIT
+### Debug Logging
+
+**Enable Debug Logs:**
+```properties
+logging.level.com.simple.MySimpleSpringBootAgent=DEBUG
+logging.level.dev.langchain4j=DEBUG
+```
+
+### FAQ
+
+**Q: Where is HTML stored?**
+A: ThreadLocal on server (thread-safe, local memory only)
+
+**Q: Why not send raw HTML to AI?**
+A: Reduces tokens, improves security, allows selective querying
+
+**Q: How does AI access HTML if it doesn't see it?**
+A: Through 6 tools that query ThreadLocal
+
+**Q: What if AI can't find the element?**
+A: Returns `elementFound: false` with explanation
+
+**Q: How do I use this in Selenium tests?**
+A: Call POST endpoint, get recommendations, use in test
+
+**Q: What's typical response time?**
+A: Usually < 2 seconds (depends on HTML size and model speed)
+
+**Q: Can I use OpenAI instead of local LLM?**
+A: Yes, configure OpenAI endpoint in properties
+
+**Q: Does it work with large pages (500KB+)?**
+A: Yes, preprocessing reduces size by 90%+
+
+**Q: Is my HTML secure?**
+A: Yes, stays on server in ThreadLocal (never sent to AI)
+
+---
+
+## Quick Reference
+
+### Common Curl Commands
+
+```bash
+# Health check
+curl http://localhost:8080/api/locators/health
+
+# Test with sample
+curl http://localhost:8080/api/locators/test
+
+# Analyze (basic)
+curl -X POST http://localhost:8080/api/locators/analyze \
+  -H "Content-Type: application/json" \
+  -d '{"locator":"xpath","htmlContent":"<html>..."}'
+
+# Extract recommendation
+curl http://localhost:8080/api/locators/test | jq '.recommendedLocator'
+
+# Pretty print
+curl http://localhost:8080/api/locators/test | jq '.'
+```
+
+### Request Template
+
+```json
+{
+  "locator": "//*[@id='search']",
+  "htmlContent": "<html>...</html>",
+  "elementDescription": "Search button",
+  "pageUrl": "https://example.com"
+}
+```
+
+### Response Template
+
+```json
+{
+  "elementFound": boolean,
+  "recommendedLocator": "string",
+  "recommendedLocatorType": "ID|NAME|CSS|XPATH|...",
+  "byId": "string",
+  "byName": "string",
+  "primaryCssSelector": "string",
+  "primaryXPath": "string",
+  "confidence": number,
+  "explanation": "string"
+}
+```
+
+### Configuration Template
+
+```properties
+# LLM
+langchain4j.ollama.chat-model.base-url=http://localhost:11434
+langchain4j.ollama.chat-model.model-name=llama3.2
+langchain4j.ollama.chat-model.temperature=0.3
+
+# HTML Processing
+html.processing.max-output-size=51200
+html.processing.max-candidates=5
+
+# Logging
+logging.level.com.simple.MySimpleSpringBootAgent=INFO
+```
+
+### Tech Stack
+
+- **Language**: Java 21
+- **Framework**: Spring Boot 3.4.2
+- **AI Orchestration**: langchain4j 1.10.0
+- **HTML Parsing**: Jsoup 1.17.2
+- **HTML Compression**: HtmlCompressor 1.5.2
+- **Build Tool**: Maven 3.6+
+- **LLM**: Ollama (local) or any OpenAI-compatible API
+
+---
+
+## Key Takeaways
+
+✅ **How It Works**: HTML preprocessed locally → AI gets 3 small params → uses tools to query → returns recommendations
+
+✅ **Why It's Efficient**: Minimal tokens, secure (HTML stays on server), flexible (AI decides what to search)
+
+✅ **Priority Order**: By.id > By.name > By.linkText > By.css > By.xpath
+
+✅ **SOLID Architecture**: Each component has single responsibility, easy to test and extend
+
+✅ **Easy Setup**: Ollama + Maven + Claude Code with jdtls-lsp
+
+✅ **AI-Powered**: Uses local LLM with tool calling for intelligent analysis
 
 ---
 
 **Built with ❤️ using langchain4j, Spring Boot, and SOLID principles**
+
+---
+
+## Documentation History
+
+This documentation was consolidated on 2026-01-26 from 5 separate markdown files into this single comprehensive guide for improved clarity and maintainability.
+
+**Archived documentation** (preserved for historical reference):
+- 📁 [View archived documentation](docs/archive/) - Includes original README.md, GUIDE.md, setup guides, and historical documents
+
+**Why consolidated?**
+- Single source of truth for easier maintenance
+- Optimized for both new developers and LLMs
+- 60% size reduction by removing redundancy while preserving all content
+
+Last updated: 2026-01-26
+
+For issues or questions, see troubleshooting section or check project repository.
