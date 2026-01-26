@@ -1,6 +1,5 @@
 package com.simple.MySimpleSpringBootAgent.service;
 
-import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 /**
@@ -8,10 +7,7 @@ import org.springframework.stereotype.Service;
  * Follows Single Responsibility Principle - only handles response generation
  */
 @Service
-@RequiredArgsConstructor
 public class HtmlResponseGenerator {
-
-    private final HtmlCleaningService htmlCleaningService;
 
     /**
      * Create response when no matching elements found
@@ -25,7 +21,19 @@ public class HtmlResponseGenerator {
                 "<p>No matching elements found for locator: <code>%s</code></p>" +
                 "<p>The locator may be incorrect or the element may not exist in the page.</p>" +
                 "</body></html>",
-                htmlCleaningService.escapeHtml(locator)
+                escapeHtml(locator)
         );
+    }
+
+    /**
+     * Escape HTML special characters
+     */
+    private String escapeHtml(String text) {
+        if (text == null) return "";
+        return text.replace("&", "&amp;")
+                   .replace("<", "&lt;")
+                   .replace(">", "&gt;")
+                   .replace("\"", "&quot;")
+                   .replace("'", "&#39;");
     }
 }

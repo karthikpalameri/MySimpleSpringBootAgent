@@ -34,4 +34,10 @@ public class LocatorAnalysisRequest {
      * Current page URL (optional, for context)
      */
     private String pageUrl;
+
+    /**
+     * Description of the target element (e.g., "search box", "login button")
+     * Helps LLM understand what element to find
+     */
+    private String elementDescription;
 }

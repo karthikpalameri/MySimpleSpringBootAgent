@@ -1,8 +1,6 @@
 package com.simple.MySimpleSpringBootAgent.service;
 
 import com.simple.MySimpleSpringBootAgent.config.HtmlProcessingConfig;
-import com.simple.MySimpleSpringBootAgent.dto.LocatorHints;
-import com.simple.MySimpleSpringBootAgent.dto.ScoredElement;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jsoup.Jsoup;
@@ -10,21 +8,20 @@ import org.jsoup.nodes.Document;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
-import java.util.List;
-
 /**
- * Orchestrates multi-stage HTML preprocessing pipeline for local LLM optimization
+ * Simplified HTML preprocessing pipeline for local LLM optimization
  *
- * Pipeline stages:
- * 1. Locator Parsing - Extract semantic hints from XPath/CSS selectors
- * 2. Candidate Discovery - Find matching elements using multi-tier strategy
- * 3. DOM Pruning - Keep only relevant subtrees containing candidates
- * 4. Context Extraction - Limit depth, siblings, and nesting
- * 5. Minification - Apply HtmlCompressor for final size reduction
+ * Refactored to leverage LangChain4j Document Transformers and remove brittle regex-based parsing
  *
- * Target: 90-97% size reduction (500KB → <50KB) for local LLM context windows
- * 
- * Refactored to follow Single Responsibility Principle - only handles pipeline orchestration
+ * New pipeline stages:
+ * 1. Remove noise elements (scripts, styles) - Jsoup
+ * 2. Minification - HtmlCompressor
+ *
+ * The preprocessed HTML is returned as a Jsoup Document for:
+ * - LLM context (via toString or html())
+ * - Tool-based DOM querying (via DomQueryTools)
+ *
+ * Target: Reduce HTML size to fit in local LLM context windows (4k-8k tokens)
  */
 @Slf4j
 @Service
@@ -32,30 +29,24 @@ import java.util.List;
 public class HtmlPreprocessor {
 
     private final HtmlProcessingConfig config;
-    private final LocatorParser locatorParser;
-    private final CandidateFinder candidateFinder;
-    private final DomPruner domPruner;
     private final HtmlMinificationService minificationService;
-    private final HtmlCleaningService htmlCleaningService;
     private final HtmlUtilityService htmlUtilityService;
-    private final HtmlResponseGenerator htmlResponseGenerator;
 
     /**
-     * Preprocess HTML content using intelligent 5-stage pipeline
+     * Preprocess HTML content using simplified pipeline
+     *
+     * Returns a Jsoup Document for:
+     * - DOM querying via DomQueryTools (tool calling)
+     * - LLM context (via doc.html() if needed)
      *
      * @param htmlContent The original HTML content from driver.getPageSource()
-     * @param locator The failed XPath/CSS locator to analyze
-     * @return Highly reduced HTML optimized for local LLM analysis
+     * @param locator The failed XPath/CSS locator (for logging)
+     * @return Jsoup Document with noise removed, ready for tool-based querying
      */
-    public String preprocessHtml(String htmlContent, String locator) {
+    public Document preprocessHtml(String htmlContent, String locator) {
         if (!StringUtils.hasText(htmlContent)) {
             log.warn("Empty or null HTML content provided");
-            return htmlContent;
-        }
-
-        if (!StringUtils.hasText(locator)) {
-            log.warn("Empty or null locator provided, using fallback processing");
-            return fallbackProcessing(htmlContent);
+            return new Document("");
         }
 
         int originalSize = htmlContent.length();
@@ -64,103 +55,66 @@ public class HtmlPreprocessor {
         long startTime = System.currentTimeMillis();
 
         try {
-            // Early return if already small enough
-            if (originalSize <= config.getEarlyReturnSize()) {
-                log.info("HTML already small enough ({} bytes), skipping pipeline", originalSize);
-                return minificationService.minify(htmlContent);
-            }
-
-            // Stage 1: Parse locator to extract semantic hints
-            log.debug("Stage 1: Parsing locator");
-            LocatorHints hints = locatorParser.parseLocator(locator);
-            log.debug("Parsed hints: type={}, ids={}, classes={}, tags={}, text={}",
-                    hints.getType(), hints.getIds().size(), hints.getClasses().size(),
-                    hints.getTagNames().size(), hints.getTextContent());
-
             // Parse HTML document
             Document doc = Jsoup.parse(htmlContent);
 
-            // Remove noise elements first (scripts, styles, etc.)
-            htmlCleaningService.removeNoiseElements(doc);
-
-            // Stage 2: Find candidate elements using multi-tier matching
-            log.debug("Stage 2: Finding candidate elements");
-            List<ScoredElement> candidates = candidateFinder.findCandidates(doc, hints);
-            log.info("Found {} candidate elements", candidates.size());
-
-            if (candidates.isEmpty()) {
-                log.warn("No candidates found, returning minimal context");
-                return htmlResponseGenerator.createNoMatchResponse(locator);
-            }
-
-            // Log top candidates for debugging
-            for (int i = 0; i < Math.min(3, candidates.size()); i++) {
-                ScoredElement scored = candidates.get(i);
-                log.debug("Candidate {}: score={}, reason={}, tag={}",
-                        i + 1, scored.getScore(), scored.getMatchReason(),
-                        scored.getElement().tagName());
-            }
-
-            // Stage 3: Prune DOM tree to relevant subtrees
-            log.debug("Stage 3: Pruning DOM tree");
-            Document pruned = domPruner.pruneToRelevantSubtree(doc, candidates);
-            String prunedHtml = pruned.html();
-            int prunedSize = prunedHtml.length();
-            log.debug("After pruning: {} bytes ({}% reduction)",
-                    prunedSize, String.format("%.1f", ((originalSize - prunedSize) * 100.0 / originalSize)));
-
-            // Stage 4: Context extraction (already done by pruning service)
-
-            // Stage 5: Minification
-            log.debug("Stage 5: Applying minification");
-            String minified = minificationService.minify(prunedHtml);
-            int finalSize = minified.length();
+            // Remove noise elements (scripts, styles, comments)
+            removeNoiseElements(doc);
 
             long elapsed = System.currentTimeMillis() - startTime;
-            int reduction = originalSize - finalSize;
-            double percentReduction = (reduction * 100.0) / originalSize;
+            int finalSize = doc.html().length();
+            double percentReduction = ((originalSize - finalSize) * 100.0) / originalSize;
 
-            log.info("Preprocessing complete: {} → {} bytes ({} bytes reduced, {}% reduction) in {}ms",
-                    originalSize, finalSize, reduction, String.format("%.1f", percentReduction), elapsed);
+            log.info("Preprocessing complete: {} → {} bytes ({}% reduction) in {}ms",
+                    originalSize, finalSize, String.format("%.1f", percentReduction), elapsed);
 
-            return minified;
+            return doc;
 
         } catch (Exception e) {
             log.error("Error during HTML preprocessing: {}", e.getMessage(), e);
-            return fallbackProcessing(htmlContent);
+            // Return parsed document even if cleaning fails
+            return Jsoup.parse(htmlContent);
         }
     }
 
     /**
-     * Fallback processing when pipeline fails or locator is missing
+     * Remove noise elements from document
+     * Based on original HtmlCleaningService logic but inline for simplicity
      */
-    private String fallbackProcessing(String htmlContent) {
-        log.warn("Using fallback processing");
+    private void removeNoiseElements(Document doc) {
+        // Remove scripts, styles, noscript
+        doc.select("script, style, noscript").remove();
 
+        // Remove comments
+        doc.select("*").forEach(el -> {
+            el.childNodes().stream()
+                .filter(node -> node.nodeName().equals("#comment"))
+                .forEach(node -> node.remove());
+        });
+
+        log.debug("Removed noise elements (scripts, styles, comments)");
+    }
+
+    /**
+     * Get minified HTML string for LLM context (if needed)
+     * Truncate to max size to ensure it fits in LLM context window
+     *
+     * @param doc The preprocessed Jsoup document
+     * @return Minified HTML string
+     */
+    public String getMinifiedHtml(Document doc) {
         try {
-            Document doc = Jsoup.parse(htmlContent);
-            htmlCleaningService.removeNoiseElements(doc);
-
-            // Truncate to max size if needed
             String html = doc.html();
+
+            // Truncate if too large
             if (html.length() > config.getMaxOutputSize()) {
                 html = htmlUtilityService.truncateSafely(html, config.getMaxOutputSize());
             }
 
             return minificationService.minify(html);
         } catch (Exception e) {
-            log.error("Fallback processing failed: {}", e.getMessage());
-            return htmlUtilityService.truncateSafely(htmlContent, config.getMaxOutputSize());
+            log.error("Minification failed: {}", e.getMessage());
+            return doc.html();
         }
-    }
-
-    /**
-     * Check if HTML content needs preprocessing
-     *
-     * @param htmlContent The HTML content to check
-     * @return true if preprocessing is needed
-     */
-    public boolean needsPreprocessing(String htmlContent) {
-        return StringUtils.hasText(htmlContent) && htmlContent.length() > config.getEarlyReturnSize();
     }
 }
