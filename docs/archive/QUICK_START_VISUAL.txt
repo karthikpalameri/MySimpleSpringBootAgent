@@ -1,0 +1,339 @@
+================================================================================
+                   QUICK START - VISUAL REFERENCE CARD
+================================================================================
+
+YOUR QUESTION:
+How does analyzeLocator work when we're not sending complete HTML content?
+
+ANSWER IN ONE DIAGRAM:
+──────────────────────
+
+         ┌────────────────────────────────────────────┐
+         │     You Send This to API                    │
+         ├────────────────────────────────────────────┤
+         │ • locator: "//*[@id='x']"                 │
+         │ • htmlContent: "<html>...</html>"         │
+         │ • elementDescription: "Search"            │
+         │ • pageUrl: "https://..."                  │
+         └────────────────────┬─────────────────────┘
+                              │
+                              ▼
+         ┌────────────────────────────────────────────┐
+         │     API Server Preprocesses                │
+         ├────────────────────────────────────────────┤
+         │ • Store HTML in ThreadLocal (server)      │
+         │ • Clean/optimize HTML                     │
+         │ • 90% size reduction                      │
+         └────────────────────┬─────────────────────┘
+                              │
+                              ▼
+         ┌────────────────────────────────────────────┐
+         │     AI Receives ONLY                       │
+         ├────────────────────────────────────────────┤
+         │ • locator: "//*[@id='x']"                 │
+         │ • elementDescription: "Search"            │
+         │ • pageUrl: "https://..."                  │
+         │                                            │
+         │ ❌ NO HTML SENT! (stays on server)        │
+         └────────────────────┬─────────────────────┘
+                              │
+                              ▼
+         ┌────────────────────────────────────────────┐
+         │     AI Uses Tools to Query HTML            │
+         ├────────────────────────────────────────────┤
+         │ • findByXPath("//*[@id='x']")             │
+         │   Tool queries ThreadLocal (server)      │
+         │   Returns: "No matches"                   │
+         │                                            │
+         │ • getAllInteractiveElements()            │
+         │   Tool queries ThreadLocal (server)      │
+         │   Returns: 50+ elements                   │
+         │                                            │
+         │ • findByText("Search")                    │
+         │   Tool queries ThreadLocal (server)      │
+         │   Returns: Found it!                      │
+         └────────────────────┬─────────────────────┘
+                              │
+                              ▼
+         ┌────────────────────────────────────────────┐
+         │     AI Returns Result                      │
+         ├────────────────────────────────────────────┤
+         │ {                                          │
+         │   recommendedLocator: "search-id",        │
+         │   recommendedLocatorType: "ID",           │
+         │   alternatives: {...},                     │
+         │   confidence: 0.95                        │
+         │ }                                          │
+         └────────────────────┬─────────────────────┘
+                              │
+                              ▼
+         ┌────────────────────────────────────────────┐
+         │     You Get Response                       │
+         ├────────────────────────────────────────────┤
+         │ Best locator + alternatives               │
+         │ Ready to use in your tests!               │
+         └────────────────────────────────────────────┘
+
+================================================================================
+                              KEY INSIGHT
+================================================================================
+
+HTML is NOT sent to AI!
+    ↓
+HTML is stored on server in ThreadLocal
+    ↓
+AI gets 3 small parameters only
+    ↓
+AI calls tools to query stored HTML
+    ↓
+Tools return only what's needed
+    ↓
+RESULT: Fast ✓ Cheap ✓ Secure ✓
+
+================================================================================
+                         THE 3 PARAMETERS AI GETS
+================================================================================
+
+1. failedLocator
+   └─ The locator that didn't work
+   └─ Example: "//*[@id='search']"
+   └─ Size: Small string
+
+2. elementDescription
+   └─ What you're looking for
+   └─ Example: "Search button"
+   └─ Size: Small string
+
+3. pageUrl
+   └─ Page context (optional)
+   └─ Example: "https://example.com"
+   └─ Size: Small string
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TOTAL: 3 small params (not the 50KB HTML!)
+
+================================================================================
+                         THE 6 TOOLS AI CAN USE
+================================================================================
+
+Tool                    | Purpose                  | Example
+────────────────────────┼──────────────────────────┼────────────────────────
+findByXPath()           | Test XPath expressions   | //*[@id='x']
+findByCss()             | Test CSS selectors       | button.search
+findById()              | Find by ID               | search-input
+findByAttribute()       | Find by HTML attribute   | data-testid='btn'
+findByText()            | Find by visible text     | "Click here"
+getAllInteractive()     | List all buttons/inputs  | Returns array
+
+All tools query the stored HTML on server (no network!)
+
+================================================================================
+                           WHAT AI DOES
+================================================================================
+
+Step 1: Test the failed locator
+        └─ Understand WHY it failed
+
+Step 2: See all available elements
+        └─ List interactive buttons, inputs, links
+
+Step 3: Find the target element
+        └─ Use element description to locate it
+
+Step 4: Test alternative locators
+        └─ Try By.id, By.css, By.xpath
+
+Step 5: Rank by reliability
+        └─ By.id is best (most stable)
+
+Step 6: Return recommendations
+        └─ Send back best + alternatives
+
+================================================================================
+                         REQUEST & RESPONSE
+================================================================================
+
+REQUEST (You send):
+──────────────────
+
+POST /api/locators/analyze
+
+{
+  "locator": "//*[@id='old']",         ← REQUIRED
+  "htmlContent": "<html>...</html>",   ← REQUIRED (stays on server!)
+  "elementDescription": "Search",      ← optional
+  "pageUrl": "https://..."             ← optional
+}
+
+
+RESPONSE (You get):
+───────────────────
+
+200 OK
+
+{
+  "elementFound": true,
+  "recommendedLocator": "new-id",
+  "recommendedLocatorType": "ID",
+  "alternatives": {
+    "CSS_SELECTOR": "input.search",
+    "XPATH": "//*[@id='new-id']"
+  },
+  "confidence": 0.95,
+  "explanation": "Found input with stable ID..."
+}
+
+================================================================================
+                       WHY THIS DESIGN IS SMART
+================================================================================
+
+Traditional Way (❌ Wasteful)
+  Request → {locator + 50KB HTML} → AI processes
+  Cost: $$$$$ (50KB sent to AI)
+  Speed: Slow
+  Tokens: Many
+
+Our Way (✅ Efficient)
+  Request → {locator + 50KB HTML}
+                    ↓ (stay on server)
+              {3 params} → AI uses tools
+  Cost: $ (only 3 params to AI)
+  Speed: Fast
+  Tokens: Few
+
+================================================================================
+                         COMPONENTS AT A GLANCE
+================================================================================
+
+LocatorController
+  ↓ (validates)
+LocatorRequestValidator
+
+LocatorController
+  ↓ (preprocesses)
+HtmlPreprocessor
+  ↓
+HtmlMinificationService & HtmlUtilityService
+
+LocatorController
+  ↓ (stores)
+DomQueryTools (ThreadLocal storage)
+
+LocatorController
+  ↓ (calls)
+LocatorAnalyzerAI (Claude with tools)
+  ↓ (queries)
+DomQueryTools (fetches what's needed)
+
+LocatorController
+  ↓ (formats)
+LocatorResponseMapper
+
+================================================================================
+                        ERROR RESPONSES
+================================================================================
+
+400 Bad Request
+  ├─ Missing or empty locator
+  ├─ Missing or empty htmlContent
+  ├─ Invalid HTML
+  └─ Return: {"statusCode": 400, "error": "..."}
+
+500 Internal Error
+  ├─ AI processing failed
+  ├─ Unexpected error
+  └─ Return: {"statusCode": 500, "error": "..."}
+
+200 OK (Success)
+  ├─ Element found
+  ├─ Alternatives provided
+  └─ Return: {"elementFound": true, "recommendations": {...}}
+
+================================================================================
+                       LOCATOR PREFERENCE ORDER
+================================================================================
+
+🥇 By.ID (Best)
+   └─ Most stable and fast
+   └─ Recommended when available
+
+🥈 By.NAME
+   └─ Good for form elements
+   └─ Usually stable
+
+🥉 By.LINK_TEXT
+   └─ For hyperlinks only
+
+4️⃣ By.CSS_SELECTOR
+   └─ Flexible and performant
+
+5️⃣ By.CLASS_NAME
+   └─ When classes are unique (risky)
+
+6️⃣ By.XPATH (Worst)
+   └─ Powerful but brittle
+   └─ Last resort
+
+================================================================================
+                         QUICK CHECKLIST
+================================================================================
+
+Before you send a request:
+☐ Do you have the failed locator?
+☐ Do you have the page HTML?
+☐ Optional: Element description?
+☐ Optional: Page URL?
+
+The system will:
+☐ Validate your input
+☐ Preprocess & store HTML locally
+☐ Tell AI about the problem (3 params only!)
+☐ AI uses tools to analyze
+☐ Return best alternative
+
+You'll receive:
+☐ Best locator strategy
+☐ The actual locator string
+☐ Alternative locators
+☐ Confidence score (0-1)
+☐ Explanation
+
+================================================================================
+                         WHERE TO LEARN MORE
+================================================================================
+
+Start here:
+  → SIMPLE_FLOW_GUIDE.md (ASCII diagrams, no plugins needed)
+
+Then read:
+  → FLOW_DIAGRAMS.md (beautiful Mermaid diagrams)
+  → DOCUMENTATION.md (complete reference)
+  → README.md (quick start)
+
+View diagrams:
+  → In GitHub (automatic rendering)
+  → In mermaid.live (copy & paste)
+  → In VSCode (built-in support)
+  → In IntelliJ (install Mermaid plugin)
+
+================================================================================
+                           THE BIG PICTURE
+================================================================================
+
+You send broken locator + HTML
+         ↓
+System stores HTML locally
+         ↓
+AI gets only 3 small parameters
+         ↓
+AI calls tools to query HTML
+         ↓
+AI finds best alternative
+         ↓
+You get recommendations
+         ↓
+Use them in your tests!
+
+Fast ✓ Cheap ✓ Secure ✓
+
+================================================================================

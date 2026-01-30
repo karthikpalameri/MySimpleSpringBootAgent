@@ -31,3 +31,13 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### Claude Code ###
+.claude/
+
+### Serena Tooling ###
+.serena/
+
+### Misc ###
+/langchain4j-examples/
+.roo/
